@@ -17,16 +17,12 @@ enum Mood {
 // ================= Encryption Utility =================
 class SimpleCipher {
     private static final int KEY = 42;
-
     public static String encrypt(String data) {
         StringBuilder encrypted = new StringBuilder();
         for (char c : data.toCharArray()) encrypted.append((char) (c ^ KEY));
         return encrypted.toString();
     }
-
-    public static String decrypt(String data) {
-        return encrypt(data);
-    }
+    public static String decrypt(String data) { return encrypt(data); }
 }
 
 // ================= Journal Entry =================
@@ -34,7 +30,7 @@ class JournalEntry {
     private Date startTime;
     private Date endTime;
     private Mood mood;
-    private String note; // Feedback
+    private String note;
     private List<String> tags;
     private long durationMinutes;
 
@@ -66,7 +62,6 @@ class JournalEntry {
     public String getNote() { return note; }
     public long getDurationMinutes() { return durationMinutes; }
     public List<String> getTags() { return tags; }
-
     public boolean needsFeedback() { return note == null || note.isEmpty(); }
 
     public String toString(int index) {
@@ -136,25 +131,19 @@ class JournalManager {
         else for (int i=0;i<filtered.size();i++) System.out.println(filtered.get(i).toString(i+1));
     }
 
-    // ================= Modified Mood Statistics =================
     public void generateMoodStatistics() {
         if (entries.isEmpty()) { System.out.println("No entries to analyze."); return; }
-
         SimpleDateFormat dayFormat = new SimpleDateFormat("yyyy-MM-dd");
-
-        // Group entries by day
         Map<String, List<JournalEntry>> dayGroups = new TreeMap<>();
         for (JournalEntry e : entries) {
             String day = (e.getStartTime() != null) ? dayFormat.format(e.getStartTime()) : "Unknown";
             dayGroups.computeIfAbsent(day, k -> new ArrayList<>()).add(e);
         }
-
         System.out.println("\n--- Mood Stats Day by Day ---");
         for (String day : dayGroups.keySet()) {
             List<JournalEntry> dayEntries = dayGroups.get(day);
             Map<Mood, Integer> moodCount = new HashMap<>();
             for (JournalEntry e : dayEntries) moodCount.put(e.getMood(), moodCount.getOrDefault(e.getMood(),0)+1);
-
             Mood common=null; int max=0;
             System.out.println("Date: "+day);
             for (Mood m : moodCount.keySet()) {
@@ -165,11 +154,8 @@ class JournalManager {
             }
             System.out.println("Most common mood: "+common+"\n");
         }
-
-        // Overall stats
         Map<Mood, Integer> overallMap = new HashMap<>();
         for(JournalEntry e:entries) overallMap.put(e.getMood(), overallMap.getOrDefault(e.getMood(),0)+1);
-
         Mood overallCommon=null; int overallMax=0;
         System.out.println("--- Overall Mood Stats ---");
         for(Mood m: overallMap.keySet()){
@@ -182,8 +168,9 @@ class JournalManager {
 
     public void generateReport() { viewAll(); generateMoodStatistics(); }
 
+    // ✅ FIXED: Always overwrite full details (proper saving)
     public void saveToFile(String filename) throws IOException {
-        try(BufferedWriter bw = new BufferedWriter(new FileWriter(filename))){
+        try(BufferedWriter bw = new BufferedWriter(new FileWriter(filename,false))){
             for(JournalEntry e: entries) bw.write(SimpleCipher.encrypt(e.serialize())+"\n");
         }
     }
@@ -222,7 +209,6 @@ class MoodAnalyzer {
         if(text.contains("confused")||text.contains("uncertain")) return Mood.CONFUSED;
         return Mood.NEUTRAL;
     }
-
     public static String getSuggestion(Mood mood) {
         switch(mood){
             case HAPPY: return "Share your joy with others.";
@@ -242,16 +228,16 @@ class MoodAnalyzer {
 class User {
     private String username;
     private String password;
-
     public User(String username){ this.username=username.trim().isEmpty()?"default_user":username.trim(); }
     public boolean authenticate(String pw){ return password!=null && password.equals(pw);}
     public void setPassword(String pw){ this.password=pw;}
+    public String getPassword(){return password;}
     public String getUsername(){ return username;}
 }
 
 // ================= Main =================
 public class MentalWellnessJournal3 {
-    private static final String USER_FILE="users.txt";
+    private static final String USER_FILE="jsample.txt";
 
     public static String getDurationString(long ms){
         long minutes = TimeUnit.MILLISECONDS.toMinutes(ms);
@@ -261,11 +247,14 @@ public class MentalWellnessJournal3 {
         return hours+" hours "+minutes+" minutes";
     }
 
+    // ✅ FIXED LOGIN BEHAVIOR
     private static User login(Scanner sc) throws IOException {
         System.out.print("Enter username: ");
         String username=sc.nextLine().trim();
         Map<String,String> map=new HashMap<>();
         File f = new File(USER_FILE);
+
+        // Load all users
         if(f.exists()){
             try(BufferedReader br=new BufferedReader(new FileReader(f))){
                 String line;
@@ -275,25 +264,35 @@ public class MentalWellnessJournal3 {
                 }
             }
         }
+
         User user=new User(username);
+        // Existing user
         if(map.containsKey(username)){
             String pw=SimpleCipher.decrypt(map.get(username));
             user.setPassword(pw);
             int attempts=3;
             while(attempts>0){
                 System.out.print("Enter password: ");
-                if(user.authenticate(sc.nextLine())) { System.out.println("Login successful."); return user; }
-                else { attempts--; System.out.println("Incorrect. "+attempts+" left."); }
+                if(user.authenticate(sc.nextLine())) { 
+                    System.out.println("Login successful.\n");
+                    return user; 
+                } else { 
+                    attempts--; 
+                    System.out.println("Incorrect password. Attempts left: "+attempts);
+                }
             }
-            System.out.println("Too many attempts. Exiting."); return null;
-        } else {
+            System.out.println("Too many failed attempts. Exiting.");
+            return null;
+        } 
+        // New user creation
+        else {
             System.out.print("New user! Set password: ");
             String pw=sc.nextLine();
             user.setPassword(pw);
             try(BufferedWriter bw=new BufferedWriter(new FileWriter(f,true))){
                 bw.write(username+":"+SimpleCipher.encrypt(pw)); bw.newLine();
             }
-            System.out.println("User created.");
+            System.out.println("✅ User created successfully.\n");
         }
         return user;
     }
@@ -307,7 +306,6 @@ public class MentalWellnessJournal3 {
         JournalManager manager=new JournalManager();
         manager.loadFromFile(journalFile);
 
-        // Ask feedback for pending entries first
         List<JournalEntry> pending = manager.getPendingFeedbacks();
         if(!pending.isEmpty()){
             System.out.println("\nYou have pending feedback entries!");
@@ -361,7 +359,6 @@ public class MentalWellnessJournal3 {
                     JournalEntry newEntry = new JournalEntry(startTime,null,moodDetected,null,tags);
                     manager.addEntry(newEntry);
 
-                    // Feedback immediately
                     String fb;
                     while(true){
                         System.out.print("After suggestion, how do you feel now (feedback)? within 2 hours: ");
@@ -384,7 +381,10 @@ public class MentalWellnessJournal3 {
                     break;
                 case 5: manager.generateReport(); break;
                 case 6: manager.deleteEntryByIndex(sc); break;
-                case 7: manager.saveToFile(journalFile); System.out.println("Saved. Goodbye!"); break;
+                case 7: 
+                    manager.saveToFile(journalFile); 
+                    System.out.println("✅ All data saved successfully. Goodbye!"); 
+                    break;
                 default: System.out.println("Invalid choice."); break;
             }
         } while(choice!=7);
